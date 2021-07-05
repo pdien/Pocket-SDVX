@@ -24,6 +24,15 @@ int currMode = EEPROM.read(0);
 #define BIND_FX_R 'x'
 #define BIND_ST   KEY_RETURN
 
+// Spin Rhythm Keybinds
+#define SR_BIND_A     'q'
+#define SR_BIND_B     'w'
+#define SR_BIND_C     'e'
+#define SR_BIND_D     'rq'
+#define SR_BIND_FX_L  ' '
+#define SR_BIND_FX_R  KEY_LEFT_SHIFT
+#define SR_BIND_ST    KEY_RETURN
+
 // Button Pinout
 #define BT_A  5
 #define BT_B  6
@@ -47,9 +56,10 @@ unsigned long reactiveTimeoutMax = 1000;
 unsigned long reactiveTimeoutCount = reactiveTimeoutMax;
 
 uint8_t bindKeys[] = { BIND_A, BIND_B, BIND_C, BIND_D, BIND_FX_L, BIND_FX_R, BIND_ST };
+uint8_t srBindKeys[] = { SR_BIND_A, SR_BIND_B, SR_BIND_C, SR_BIND_D, SR_BIND_FX_L, SR_BIND_FX_R, SR_BIND_ST };
 uint8_t buttonPins[] = { BT_A, BT_B, BT_C, BT_D, FX_L, FX_R, BT_ST };
 uint8_t ledPins[] = { BT_A_LED, BT_B_LED, BT_C_LED, BT_D_LED, FX_L_LED, FX_R_LED, BT_ST_LED };
-uint8_t buttonCount = sizeof(buttonPins) / sizeof(buttonPins[0]);
+uint8_t buttonCount = sizeof(buttonPins);
 
 // Encoder sensitivity = number of positions per rotation times 4 (24*4) / number of positions for HID report (256)
 #define ENCODER_SENSITIVITY (double) 0.375
@@ -58,6 +68,8 @@ float knob1 = 0;
 float knob2 = 0;
 float old_knob1 = 0;
 float old_knob2 = 0;
+float time = 0;
+float oldTime = 0;
 
 /**
  * Light Logic for Controller & HID Mode
@@ -79,6 +91,8 @@ void lights(uint16_t lightDesc) {
   }
 }
 
+void keyboard_mode(bool sr=false);
+
 /**
  * Arduino Setup
  */
@@ -92,18 +106,31 @@ void setup() {
   // Startup mode
   int Button1State = digitalRead(BT_A); //Read Btn-A
   int Button2State = digitalRead(BT_B); //Read Btn-B
-  // Button 1 is held down: Joystick Mode
-  if (Button1State == LOW && Button2State == HIGH) {
+  int Button3State = digitalRead(BT_C); //Read Btn-C
+  if (Button1State == LOW && Button2State == HIGH && Button3State == HIGH) {
+    // Button 1 is held down: Joystick Mode
     if (currMode != 1) {
       EEPROM.update(0, 1); 
       delay(200);
     }
-  } else if (Button2State == LOW && Button1State == HIGH) {
+  } else if (Button2State == LOW && Button1State == HIGH && Button3State == HIGH) {
     // Button 2 is held down: Keyboard Mode
     if (currMode != 2) {
       EEPROM.update(0, 2);
       delay(200);
     }
+  }
+    else if (Button3State == LOW && Button1State == HIGH && Button2State == HIGH) {
+      // Button 3 is held down: Keyboard Mode for Spin Rhythm XD
+      if (currMode != 3) {
+        EEPROM.update(0, 3);
+        delay(200);
+      }
+    }
+  if(EEPROM.read(0) == 3) {
+    for(size_t i = 0; i < sizeof(bindKeys); i++){
+          bindKeys[i] = srBindKeys[i];
+        }
   }
 }
 
@@ -115,20 +142,23 @@ void loop() {
     joy_mode();
   } else if (EEPROM.read(0) == 2) {
     keyboard_mode();
+  } else if (EEPROM.read(0) == 3) {
+    #define MOUSE_MULT 12
+    keyboard_mode(true);
   }
 }
 
 /**
  * Keyboard Implementation
  */
-void keyboard_mode() {
+void keyboard_mode(bool sr=false) {  
   // Read encoders
-  knob1 =  (float)(encL.read());
-  knob2 = (float)encR.read();
+  knob1 = (float)(encL.read());
+  knob2 = (float)(encR.read());
 
   if(knob1 != old_knob1) {
     Mouse.move((knob1 - old_knob1) * MOUSE_MULT, 0);
-    
+    //Mouse.move(newKnob1, 0);
     // We count the difference in the encoders, but we must not go over arduino's int limit
     if(knob1 < -255 || knob1 > 255) {
       encL.write(0);
@@ -136,16 +166,31 @@ void keyboard_mode() {
     } else {
       old_knob1 = knob1;
     }
+    oldTime = time;
   }
-  
-  if(knob2 != old_knob2) {
-    Mouse.move(0, (knob2 - old_knob2) * MOUSE_MULT);
-    
-    if(knob2 < -255 || knob2 > 255) {
-      encR.write(0);
-      old_knob2 = 0;
-    } else {
-      old_knob2 = knob2;
+
+  if(sr == true){
+    // Have both knobs control horizontal mouse movement for Spin Rhythm XD, ambidextrous control
+    if(knob2 != old_knob2) {
+      Mouse.move((knob2 - old_knob2) * MOUSE_MULT, 0);
+      if(knob2 < -255 || knob2 > 255) {
+        encR.write(0);
+        old_knob2 = 0;
+      } else {
+          old_knob2 = knob2;
+      }
+      oldTime = time;
+    }
+  } else {
+    if(knob2 != old_knob2) {
+      Mouse.move(0, (knob2 - old_knob2) * MOUSE_MULT);
+      if(knob2 < -255 || knob2 > 255) {
+        encR.write(0);
+        old_knob2 = 0; 
+      } else {
+        old_knob2 = knob2;
+      }
+      oldTime = time;
     }
   }
   
